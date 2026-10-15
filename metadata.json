@@ -1,0 +1,6 @@
+{
+  "name": "SG Bus Arrival - Real-Time Singapore Bus Tracker",
+  "description": "Real-time Singapore bus arrival times, crowd levels, bus types, and accurate wait time predictions across all bus stops with LTA DataMall compatibility.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
