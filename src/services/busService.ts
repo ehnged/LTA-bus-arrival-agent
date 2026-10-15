@@ -282,3 +282,86 @@ export function saveCommuteAlerts(alerts: CommuteAlert[]): void {
     // ignore
   }
 }
+
+// Client-side helper to query serverless /api/busarrival endpoint
+export async function fetchLiveLtaArrivals(
+  busStopCode: string,
+  userApiKey?: string
+): Promise<{ success: boolean; data?: ServiceArrival[]; error?: string }> {
+  try {
+    const headers: Record<string, string> = {};
+    if (userApiKey && userApiKey.trim()) {
+      headers['x-lta-account-key'] = userApiKey.trim();
+    }
+
+    const res = await fetch(`/api/busarrival?BusStopCode=${encodeURIComponent(busStopCode)}`, {
+      headers
+    });
+
+    if (!res.ok) {
+      const errJson = await res.json().catch(() => ({}));
+      return {
+        success: false,
+        error: errJson.message || `Serverless endpoint returned HTTP ${res.status}`
+      };
+    }
+
+    const raw = await res.json();
+    if (!raw || !Array.isArray(raw.Services)) {
+      return { success: false, error: 'Unexpected response format from LTA DataMall v3' };
+    }
+
+    const now = Date.now();
+    const parsedServices: ServiceArrival[] = raw.Services.map((svc: any) => {
+      const parseLtaBus = (item: any): NextBusInfo | null => {
+        if (!item || !item.EstimatedArrival) return null;
+        const arrivalMs = new Date(item.EstimatedArrival).getTime();
+        const diffSec = Math.round((arrivalMs - now) / 1000);
+        const minutes = Math.max(0, Math.floor(diffSec / 60));
+        const arrDate = new Date(item.EstimatedArrival);
+        const hours = arrDate.getHours().toString().padStart(2, '0');
+        const mins = arrDate.getMinutes().toString().padStart(2, '0');
+        const secs = arrDate.getSeconds().toString().padStart(2, '0');
+
+        return {
+          OriginCode: item.OriginCode || '',
+          DestinationCode: item.DestinationCode || '',
+          EstimatedArrival: item.EstimatedArrival,
+          Latitude: item.Latitude || '',
+          Longitude: item.Longitude || '',
+          VisitNumber: item.VisitNumber || '1',
+          Load: (item.Load as BusLoad) || 'SEA',
+          Feature: item.Feature === 'WAB' ? 'WAB' : '',
+          Type: (item.Type as BusType) || 'SD',
+          MinutesAway: minutes,
+          SecondsAway: diffSec,
+          IsApproaching: diffSec <= 60 && diffSec >= 0,
+          EstimatedTimeFormatted: `${hours}:${mins}:${secs}`
+        };
+      };
+
+      const nb1 = parseLtaBus(svc.NextBus);
+      const nb2 = parseLtaBus(svc.NextBus2);
+      const nb3 = parseLtaBus(svc.NextBus3);
+      const mins = nb1 ? nb1.MinutesAway : 5;
+
+      return {
+        ServiceNo: svc.ServiceNo,
+        Operator: (svc.Operator as BusOperator) || getOperatorForService(svc.ServiceNo),
+        DestinationName: getDestinationForService(svc.ServiceNo),
+        NextBus: nb1,
+        NextBus2: nb2,
+        NextBus3: nb3,
+        Prediction: calculatePrediction(mins, svc.ServiceNo, busStopCode)
+      };
+    });
+
+    return { success: true, data: parsedServices };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err?.message || 'Network error connecting to /api/busarrival'
+    };
+  }
+}
+

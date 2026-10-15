@@ -7,8 +7,12 @@ import {
   ExternalLink, 
   Server, 
   Database, 
-  ShieldCheck,
-  Play
+  Play, 
+  Terminal, 
+  ShieldAlert, 
+  CheckCircle2, 
+  Activity,
+  KeyRound
 } from 'lucide-react';
 
 interface BackendIntegrationModalProps {
@@ -17,8 +21,15 @@ interface BackendIntegrationModalProps {
 
 export const BackendIntegrationModal: React.FC<BackendIntegrationModalProps> = ({ currentStopCode }) => {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
-  const [apiKeyInput, setApiKeyInput] = useState<string>('');
-  const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'ready'>('ready');
+  const [testStopCode, setTestStopCode] = useState<string>('83139');
+  const [customKeyInput, setCustomKeyInput] = useState<string>('');
+  const [testResult, setTestResult] = useState<{
+    endpoint: string;
+    status: number;
+    data: any;
+    timestamp: string;
+  } | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
 
   const copyCode = (code: string, idx: number) => {
     navigator.clipboard.writeText(code);
@@ -26,88 +37,70 @@ export const BackendIntegrationModal: React.FC<BackendIntegrationModalProps> = (
     setTimeout(() => setCopiedIndex(null), 2000);
   };
 
-  const sampleExpressCode = `// Express proxy route for LTA DataMall v2 BusArrival
-// server.ts or routes/bus.ts
+  const runTest = async (endpointType: 'health' | 'arrival') => {
+    setIsLoading(true);
+    setTestResult(null);
 
-import express from 'express';
-import axios from 'axios';
+    try {
+      const url = endpointType === 'health' 
+        ? '/api/health' 
+        : `/api/busarrival?BusStopCode=${encodeURIComponent(testStopCode || '83139')}`;
 
-const router = express.Router();
-const LTA_API_KEY = process.env.LTA_DATAMALL_KEY || 'YOUR_LTA_KEY';
+      const headers: Record<string, string> = {
+        'accept': 'application/json'
+      };
 
-router.get('/api/lta/BusArrivalv2', async (req, res) => {
-  try {
-    const { BusStopCode } = req.query;
-    if (!BusStopCode) {
-      return res.status(400).json({ error: 'BusStopCode query param required' });
-    }
-
-    const response = await axios.get(
-      'https://datamall2.mytransport.sg/ltaodataservice/v2/BusArrivalv2',
-      {
-        params: { BusStopCode },
-        headers: {
-          'AccountKey': LTA_API_KEY,
-          'accept': 'application/json'
-        }
+      if (customKeyInput.trim()) {
+        headers['x-lta-account-key'] = customKeyInput.trim();
       }
-    );
 
-    // Returns official LTA DataMall v2 payload
-    res.json(response.data);
-  } catch (err: any) {
-    console.error('LTA API proxy error:', err.message);
-    res.status(500).json({ error: 'Failed to fetch real-time LTA bus data' });
-  }
-});
+      const res = await fetch(url, { headers });
+      const data = await res.json().catch(() => ({ message: 'Non-JSON response' }));
 
-export default router;`;
-
-  const sampleSchema = `{
-  "odata.metadata": "http://datamall2.mytransport.sg/ltaodataservice/v2/$metadata#BusArrivalv2",
-  "BusStopCode": "${currentStopCode}",
-  "Services": [
-    {
-      "ServiceNo": "190",
-      "Operator": "SMRT",
-      "NextBus": {
-        "OriginCode": "44009",
-        "DestinationCode": "10049",
-        "EstimatedArrival": "2026-10-15T14:35:10+08:00",
-        "Latitude": "1.3044",
-        "Longitude": "103.8340",
-        "VisitNumber": "1",
-        "Load": "SEA",
-        "Feature": "WAB",
-        "Type": "DD"
-      },
-      "NextBus2": {
-        "OriginCode": "44009",
-        "DestinationCode": "10049",
-        "EstimatedArrival": "2026-10-15T14:41:20+08:00",
-        "Load": "SDA",
-        "Feature": "WAB",
-        "Type": "SD"
-      }
+      setTestResult({
+        endpoint: url,
+        status: res.status,
+        data,
+        timestamp: new Date().toLocaleTimeString()
+      });
+    } catch (err: any) {
+      setTestResult({
+        endpoint: endpointType === 'health' ? '/api/health' : '/api/busarrival',
+        status: 500,
+        data: { error: 'FETCH_ERROR', message: err.message },
+        timestamp: new Date().toLocaleTimeString()
+      });
+    } finally {
+      setIsLoading(false);
     }
-  ]
-}`;
+  };
+
+  const curlExample = `# Query serverless health
+curl -s http://localhost:3000/api/health
+
+# Query live bus arrival (using LTA v3 endpoint under the hood)
+curl -s "http://localhost:3000/api/busarrival?BusStopCode=83139"
+
+# Direct upstream LTA DataMall v3 target
+curl -X GET "https://datamall2.mytransport.sg/ltaodataservice/v3/BusArrival?BusStopCode=83139" \\
+  -H "AccountKey: <YOUR_LTA_KEY>" \\
+  -H "accept: application/json"`;
 
   return (
     <div className="space-y-6">
       
       {/* Overview Banner */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
                 <Server className="w-4 h-4" />
               </div>
-              <h2 className="text-lg font-bold text-white">LTA DataMall v2 Backend Architecture</h2>
+              <h2 className="text-lg font-bold text-white">Serverless LTA DataMall v3 Connection</h2>
             </div>
             <p className="text-xs text-slate-400 max-w-2xl leading-relaxed">
-              This application has been engineered with 100% schema alignment to Singapore Land Transport Authority (LTA) DataMall v2 standards. Currently running in client-side high-fidelity simulation mode. You can drop in your backend proxy route anytime!
+              Configured at project root in <code className="text-emerald-400 font-mono">/api</code> folder. Contains serverless route handlers for <code className="text-emerald-300 font-mono">/api/health.ts</code> and <code className="text-emerald-300 font-mono">/api/busarrival.ts</code> calling LTA DataMall v3.
             </p>
           </div>
 
@@ -123,77 +116,143 @@ export default router;`;
         </div>
       </div>
 
-      {/* 2-Column: Step-by-Step Backend Guide & Test Sandbox */}
+      {/* Live Serverless Sandbox & Test Runner */}
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-2">
+            <Terminal className="w-4 h-4 text-emerald-400" />
+            <h3 className="text-sm font-bold text-white">Interactive Serverless Route Tester</h3>
+          </div>
+          <span className="text-xs text-slate-400">
+            Test endpoints live against your local serverless proxy
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Target Stop Code */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-slate-300">Target BusStopCode</label>
+            <input
+              type="text"
+              value={testStopCode}
+              onChange={(e) => setTestStopCode(e.target.value)}
+              placeholder="e.g. 83139 or 09048"
+              className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+            />
+          </div>
+
+          {/* Test AccountKey input (optional header test) */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-medium text-slate-300 flex items-center gap-1">
+                <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+                <span>AccountKey (Session Test)</span>
+              </label>
+              <span className="text-[10px] text-slate-500">Not hardcoded / Stored in memory</span>
+            </div>
+            <input
+              type="password"
+              value={customKeyInput}
+              onChange={(e) => setCustomKeyInput(e.target.value)}
+              placeholder="Pass key via x-lta-account-key header or set in .env"
+              className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+            />
+          </div>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex items-center gap-3 pt-1 flex-wrap">
+          <button
+            onClick={() => runTest('arrival')}
+            disabled={isLoading}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-semibold text-xs rounded-lg transition-colors cursor-pointer"
+          >
+            <Play className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+            <span>Test GET /api/busarrival?BusStopCode={testStopCode}</span>
+          </button>
+
+          <button
+            onClick={() => runTest('health')}
+            disabled={isLoading}
+            className="flex items-center gap-2 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium rounded-lg transition-colors cursor-pointer"
+          >
+            <Activity className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Test GET /api/health</span>
+          </button>
+        </div>
+
+        {/* Live Test Results Output Box */}
+        {testResult && (
+          <div className="mt-4 p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+            <div className="flex items-center justify-between text-xs pb-2 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <span className={`px-2 py-0.5 rounded font-mono font-bold ${
+                  testResult.status === 200 
+                    ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' 
+                    : 'bg-amber-950 text-amber-400 border border-amber-800'
+                }`}>
+                  HTTP {testResult.status}
+                </span>
+                <span className="font-mono text-slate-300">{testResult.endpoint}</span>
+              </div>
+              <span className="text-slate-500 font-mono text-[11px]">{testResult.timestamp}</span>
+            </div>
+
+            <pre className="text-xs font-mono text-slate-300 overflow-x-auto max-h-[220px] p-2 leading-relaxed">
+              {JSON.stringify(testResult.data, null, 2)}
+            </pre>
+          </div>
+        )}
+      </div>
+
+      {/* Serverless Files Summary & Specs */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
-        {/* Column 1: Express / Node Proxy Implementation */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
+        {/* Box 1: File Structure */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <Code2 className="w-4 h-4 text-emerald-400" />
+            <h3 className="text-sm font-bold text-white">Configured Serverless Endpoints</h3>
+          </div>
+
+          <div className="space-y-2.5 text-xs">
+            <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1">
+              <div className="font-mono font-semibold text-emerald-400">/api/health.ts</div>
+              <p className="text-slate-400 text-[11px]">
+                Health check endpoint reporting server status, timestamp, uptime, and whether LTA_ACCOUNT_KEY is configured in the environment.
+              </p>
+            </div>
+
+            <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1">
+              <div className="font-mono font-semibold text-emerald-400">/api/busarrival.ts</div>
+              <p className="text-slate-400 text-[11px]">
+                Queries LTA DataMall v3: <code className="text-slate-300">https://datamall2.mytransport.sg/ltaodataservice/v3/BusArrival?BusStopCode=...</code>. Extracts AccountKey from environment or headers without exposing secrets.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Box 2: cURL commands */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3">
           <div className="flex items-center justify-between gap-3">
-            <h3 className="text-sm font-bold text-white flex items-center gap-2">
-              <Code2 className="w-4 h-4 text-emerald-400" />
-              <span>1. Ready-to-use Express Proxy Route</span>
-            </h3>
+            <div className="flex items-center gap-2">
+              <Terminal className="w-4 h-4 text-emerald-400" />
+              <h3 className="text-sm font-bold text-white">cURL Commands</h3>
+            </div>
             <button
-              onClick={() => copyCode(sampleExpressCode, 1)}
+              onClick={() => copyCode(curlExample, 1)}
               className="flex items-center gap-1 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded transition-colors cursor-pointer"
             >
               {copiedIndex === 1 ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copiedIndex === 1 ? 'Copied' : 'Copy Route'}</span>
+              <span>{copiedIndex === 1 ? 'Copied' : 'Copy'}</span>
             </button>
           </div>
 
-          <p className="text-xs text-slate-400">
-            Because the LTA DataMall API requires a private <code className="text-amber-400 font-mono">AccountKey</code> and does not set open CORS headers for browser fetch, route requests through this backend proxy:
-          </p>
-
-          <pre className="p-3.5 bg-slate-950 rounded-xl border border-slate-800 text-xs text-emerald-300 font-mono overflow-x-auto leading-relaxed max-h-[280px]">
-            {sampleExpressCode}
+          <pre className="p-3 bg-slate-950 rounded-xl border border-slate-800 text-xs text-emerald-300 font-mono overflow-x-auto leading-relaxed max-h-[220px]">
+            {curlExample}
           </pre>
         </div>
 
-        {/* Column 2: Data Schema & Frontend Hook */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="text-sm font-bold text-white flex items-center gap-2">
-              <Database className="w-4 h-4 text-emerald-400" />
-              <span>2. LTA DataMall v2 Payload Schema</span>
-            </h3>
-            <button
-              onClick={() => copyCode(sampleSchema, 2)}
-              className="flex items-center gap-1 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded transition-colors cursor-pointer"
-            >
-              {copiedIndex === 2 ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copiedIndex === 2 ? 'Copied' : 'Copy JSON'}</span>
-            </button>
-          </div>
-
-          <p className="text-xs text-slate-400">
-            The frontend service at <code className="text-emerald-400 font-mono">src/services/busService.ts</code> parses this exact payload:
-          </p>
-
-          <pre className="p-3.5 bg-slate-950 rounded-xl border border-slate-800 text-xs text-slate-300 font-mono overflow-x-auto leading-relaxed max-h-[280px]">
-            {sampleSchema}
-          </pre>
-        </div>
-
-      </div>
-
-      {/* Connection Test & Environment Indicator */}
-      <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-3">
-          <div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse" />
-          <div>
-            <div className="text-sm font-semibold text-white">Frontend Prediction Engine Active</div>
-            <div className="text-xs text-slate-400">Simulating live continuous arrivals with real headway intervals for 18+ Singapore stops.</div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-400">Stop Code:</span>
-          <span className="font-mono text-sm font-bold text-emerald-400 bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
-            {currentStopCode}
-          </span>
-        </div>
       </div>
 
     </div>
